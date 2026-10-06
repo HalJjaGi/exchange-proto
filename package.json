@@ -1,0 +1,15 @@
+{
+  "name": "exchange-proto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "졸업프로젝트용 미니 증권거래소 프로토타입 — 매칭 엔진 + 마켓메이커 + 페르소나 봇",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/sim.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  }
+}

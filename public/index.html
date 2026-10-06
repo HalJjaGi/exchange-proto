@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>JNF 증권 — 프로토타입</title>
+<style>
+  :root {
+    --bg: #0d1017; --panel: #151a23; --border: #232b3a;
+    --text: #dbe2ef; --dim: #7b8494;
+    --up: #f0544f; --down: #4b8ef0; --accent: #f0b24b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 14px; }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+  header .sym { font-size: 20px; font-weight: 800; }
+  header .price { font-size: 26px; font-weight: 800; }
+  header .chg { font-size: 14px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  main { display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px 20px; max-width: 1280px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .panel h3 { font-size: 12px; color: var(--dim); font-weight: 600; letter-spacing: .4px; margin-bottom: 8px; }
+  #chart { width: 100%; height: 220px; display: block; }
+  /* 체결 티커 */
+  #trades { list-style: none; font-variant-numeric: tabular-nums; }
+  #trades li { display: flex; gap: 14px; padding: 3px 4px; border-bottom: 1px solid #1a2130; font-size: 13px; }
+  #trades .t { color: var(--dim); }
+  /* 호가창 */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td { padding: 4px 6px; border-bottom: 1px solid #1a2130; }
+  .askrow td { color: var(--down); }
+  .bidrow td { color: var(--up); }
+  .currow td { padding: 8px 6px; font-weight: 800; font-size: 18px; }
+  .lvl { position: relative; }
+  .lvl .bar { position: absolute; top: 2px; bottom: 2px; right: 0; opacity: .12; border-radius: 4px; }
+  .qty { text-align: right; }
+  /* 주문 폼 */
+  .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .sides button { padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--dim); font-weight: 800; cursor: pointer; }
+  .sides button.active-buy { background: var(--up); color: #fff; border-color: var(--up); }
+  .sides button.active-sell { background: var(--down); color: #fff; border-color: var(--down); }
+  label { display: block; font-size: 11px; color: var(--dim); margin: 8px 0 4px; }
+  input { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: #0f141d; color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; gap: 6px; }
+  .row button { flex: 1; padding: 5px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; }
+  #submit { width: 100%; margin-top: 12px; padding: 12px; border-radius: 8px; border: none; font-weight: 800; font-size: 15px; color: #fff; cursor: pointer; }
+  #msg { min-height: 18px; font-size: 12px; margin-top: 6px; text-align: center; }
+  .ok { color: #3ecf8e; } .err { color: var(--up); }
+  /* 잔고/미체결 */
+  .bal { display: flex; justify-content: space-between; padding: 3px 0; font-variant-numeric: tabular-nums; }
+  .bal span:first-child { color: var(--dim); }
+  #orders li { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; border-bottom: 1px solid #1a2130; font-size: 13px; }
+  #orders button { padding: 2px 8px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; }
+  /* 피드 */
+  #feedpanel { grid-column: 1 / -1; }
+  .compose { display: flex; gap: 8px; margin-bottom: 10px; }
+  .compose input { flex: 1; }
+  .compose button { padding: 0 18px; border-radius: 8px; border: none; background: var(--accent); color: #000; font-weight: 800; cursor: pointer; }
+  #feed { list-style: none; max-height: 320px; overflow-y: auto; }
+  #feed li { padding: 6px 4px; border-bottom: 1px solid #1a2130; }
+  #feed li.reply { padding-left: 26px; border-left: 2px solid var(--border); margin-left: 8px; }
+  #feed .meta { font-size: 12px; color: var(--dim); }
+  #feed .meta b { color: var(--text); }
+  #feed .time { float: right; }
+  .conn { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #2a3345; }
+  .conn.live { background: #1d4030; color: #3ecf8e; }
+</style>
+</head>
+<body>
+<header>
+  <span class="sym">📈 JNF테크</span>
+  <span class="price" id="price">-</span>
+  <span class="chg" id="chg">-</span>
+  <span style="flex:1"></span>
+  <span class="conn" id="conn">연결 중</span>
+</header>
+
+<main>
+  <div class="panel">
+    <h3>시세 (최근 240틱)</h3>
+    <canvas id="chart"></canvas>
+    <h3 style="margin-top:12px">체결</h3>
+    <ul id="trades"></ul>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>호가창</h3>
+      <table id="book"></table>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <h3>주문</h3>
+      <div class="sides">
+        <button id="btn-buy" class="active-buy">매수</button>
+        <button id="btn-sell">매도</button>
+      </div>
+      <label>가격</label>
+      <input id="f-price" type="number" step="10"/>
+      <div class="row" style="margin-top:4px">
+        <button id="p-cur">현재가</button><button id="p-up">+1틱</button><button id="p-dn">-1틱</button>
+      </div>
+      <label>수량</label>
+      <input id="f-qty" type="number" min="1" value="10"/>
+      <div class="row" style="margin-top:4px">
+        <button data-q="0.1">10%</button><button data-q="0.25">25%</button><button data-q="max">최대</button>
+      </div>
+      <button id="submit" style="background:var(--up)">매수</button>
+      <div id="msg"></div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <h3>내 잔고</h3>
+      <div class="bal"><span>현금</span><span id="b-cash">-</span></div>
+      <div class="bal"><span>보유</span><span id="b-shares">-</span></div>
+      <div class="bal"><span>평단</span><span id="b-avg">-</span></div>
+      <div class="bal"><span>평가손익</span><span id="b-pnl">-</span></div>
+      <div class="bal"><span>실현손익</span><span id="b-real">-</span></div>
+      <h3 style="margin-top:10px">미체결 주문</h3>
+      <ul id="orders" style="list-style:none"></ul>
+    </div>
+  </div>
+
+  <div class="panel" id="feedpanel">
+    <h3>커뮤니티</h3>
+    <div class="compose">
+      <input id="f-post" placeholder="시장에 한마디... (봇들이 반응할 수도?)"/>
+      <button onclick="sendPost()">등록</button>
+    </div>
+    <ul id="feed"></ul>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const won = (n) => Math.round(n).toLocaleString('ko-KR');
+const hhmm = (t) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+const hhmmss = (t) => new Date(t).toLocaleTimeString('ko-KR', { hour12: false });
+
+let side = 'buy';
+let S = null;      // 최신 스냅샷
+let lastFeedId = 0;
+
+// ── WebSocket ──
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}`);
+  ws.onmessage = (e) => render(JSON.parse(e.data));
+  ws.onopen = () => $('conn').textContent = 'LIVE', $('conn').classList.add('live');
+  ws.onclose = () => { $('conn').classList.remove('live'); $('conn').textContent = '재연결 중'; setTimeout(connect, 1500); };
+}
+connect();
+
+// ── 렌더 ──
+function render(s) {
+  S = s;
+  const up = s.changePct >= 0;
+  const p = $('price');
+  p.textContent = won(s.price);
+  p.className = 'price ' + (up ? 'up' : 'down');
+  const c = $('chg');
+  c.textContent = `${up ? '+' : ''}${s.changePct.toFixed(2)}% (시가 대비)`;
+  c.className = 'chg ' + (up ? 'up' : 'down');
+
+  drawChart(s.chart);
+  renderTrades(s.trades);
+  renderBook(s.book, s.price);
+  renderMe(s.me);
+  renderFeed(s.feed);
+}
+
+function drawChart(data) {
+  const cv = $('chart');
+  const dpr = 2;
+  const W = cv.offsetWidth * dpr, H = 220 * dpr;
+  if (cv.width !== W) { cv.width = W; cv.height = H; }
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  if (!data || data.length < 2) return;
+
+  let min = Infinity, max = -Infinity;
+  for (const v of data) { if (v < min) min = v; if (v > max) max = v; }
+  const pad = (max - min) * 0.1 || 10;
+  const lo = min - pad, hi = max + pad;
+  const padL = 10 * dpr, padR = 64 * dpr, padT = 10 * dpr, padB = 10 * dpr;
+  const x = (i) => padL + (i / (data.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+
+  // 그리드 + 가격 라벨
+  ctx.strokeStyle = '#1c2433'; ctx.fillStyle = '#5b6577'; ctx.font = `${10 * dpr}px sans-serif`; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + ((hi - lo) * i) / 4;
+    const yy = y(v);
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+    ctx.fillText(won(v), W - padR + 6 * dpr, yy + 3 * dpr);
+  }
+
+  // 라인
+  const up = data[data.length - 1] >= data[0];
+  ctx.strokeStyle = up ? '#f0544f' : '#4b8ef0';
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  data.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
+  ctx.stroke();
+
+  // 마지막 가격 점선
+  const last = data[data.length - 1];
+  ctx.strokeStyle = '#f0b24b'; ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.lineWidth = dpr;
+  ctx.beginPath(); ctx.moveTo(padL, y(last)); ctx.lineTo(W - padR, y(last)); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function renderTrades(trades) {
+  $('trades').innerHTML = trades.slice().reverse().map((t) =>
+    `<li><span class="t">${hhmmss(t.time)}</span>
+     <span class="${t.side === 'buy' ? 'up' : 'down'}" style="width:80px">${won(t.price)}</span>
+     <span style="color:var(--dim)">${t.qty}주</span>
+     <span class="t" style="margin-left:auto">${t.side === 'buy' ? '매수 체결' : '매도 체결'}</span></li>`
+  ).join('');
+}
+
+function renderBook(book, price) {
+  const maxQty = Math.max(
+    ...book.asks.map((l) => l.qty), ...book.bids.map((l) => l.qty), 1
+  );
+  let html = '';
+  book.asks.slice().reverse().forEach((l) => {
+    html += `<tr class="askrow"><td class="lvl"><div class="bar down" style="width:${(l.qty / maxQty) * 100}%"></div></td>
+      <td class="qty">${won(l.price)}</td><td class="qty">${l.qty}</td></tr>`;
+  });
+  const upCls = 'up';
+  html += `<tr class="currow"><td></td><td class="qty ${upCls}" id="cur">${won(price)}</td><td></td></tr>`;
+  book.bids.forEach((l) => {
+    html += `<tr class="bidrow"><td class="lvl"><div class="bar up" style="width:${(l.qty / maxQty) * 100}%"></div></td>
+      <td class="qty">${won(l.price)}</td><td class="qty">${l.qty}</td></tr>`;
+  });
+  $('book').innerHTML = html;
+}
+
+function renderMe(me) {
+  $('b-cash').textContent = won(me.cash) + '원';
+  $('b-shares').textContent = me.shares + '주';
+  $('b-avg').textContent = me.avg ? won(me.avg) + '원' : '-';
+  const pnl = $('b-pnl');
+  pnl.textContent = (me.pnl >= 0 ? '+' : '') + won(me.pnl);
+  pnl.style.color = me.pnl >= 0 ? 'var(--up)' : 'var(--down)';
+  const real = $('b-real');
+  real.textContent = (me.realized >= 0 ? '+' : '') + won(me.realized);
+  real.style.color = me.realized >= 0 ? 'var(--up)' : 'var(--down)';
+  $('orders').innerHTML = me.orders.map((o) =>
+    `<li><span class="${o.side === 'buy' ? 'up' : 'down'}">${o.side === 'buy' ? '매수' : '매도'} ${won(o.price)} × ${o.qty}</span>
+     <button onclick="cancelOrder(${o.id})">취소</button></li>`
+  ).join('') || '<li style="color:var(--dim)">미체결 주문 없음</li>';
+}
+
+function renderFeed(posts) {
+  // 새 글만 앞에 추가 (스크롤/깜빡임 방지)
+  const fresh = posts.filter((p) => p.id > lastFeedId);
+  if (lastFeedId === 0) {
+    $('feed').innerHTML = posts.slice().reverse().map(feedHtml).join('');
+  } else {
+    $('feed').insertAdjacentHTML('afterbegin', fresh.slice().reverse().map(feedHtml).join(''));
+  }
+  if (posts.length) lastFeedId = Math.max(lastFeedId, posts[posts.length - 1].id);
+}
+
+function feedHtml(p) {
+  const reply = p.replyTo ? ' reply' : '';
+  const to = p.replyTo ? `↳ ${p.replyToName}에게: ` : '';
+  return `<li class="${reply}"><div class="meta"><b>${p.emoji} ${p.name}</b> ${to}<span class="time">${hhmm(p.t)}</span></div>
+          <div>${p.text}</div></li>`;
+}
+
+// ── 주문 폼 ──
+function setSide(s) {
+  side = s;
+  $('btn-buy').className = s === 'buy' ? 'active-buy' : '';
+  $('btn-sell').className = s === 'sell' ? 'active-sell' : '';
+  const sub = $('submit');
+  sub.textContent = s === 'buy' ? '매수' : '매도';
+  sub.style.background = s === 'buy' ? 'var(--up)' : 'var(--down)';
+  autofillPrice();
+}
+$('btn-buy').onclick = () => setSide('buy');
+$('btn-sell').onclick = () => setSide('sell');
+
+function autofillPrice() {
+  if (!S) return;
+  if (side === 'buy' && S.book.asks.length) $('f-price').value = S.book.asks[0].price;
+  else if (side === 'sell' && S.book.bids.length) $('f-price').value = S.book.bids[0].price;
+  else $('f-price').value = S.price;
+}
+$('p-cur').onclick = () => ($('f-price').value = S ? S.price : 0);
+$('p-up').onclick = () => ($('f-price').value = Number($('f-price').value) + 10);
+$('p-dn').onclick = () => ($('f-price').value = Number($('f-price').value) - 10);
+
+document.querySelectorAll('[data-q]').forEach((b) => {
+  b.onclick = () => {
+    if (!S) return;
+    const f = { '0.1': 0.1, '0.25': 0.25 }[b.dataset.q];
+    if (b.dataset.q === 'max' || f) {
+      if (side === 'buy') {
+        const px = Number($('f-price').value) || S.price;
+        $('f-qty').value = Math.max(1, Math.floor((S.me.cash * (f || 1)) / px));
+      } else {
+        $('f-qty').value = Math.max(1, Math.floor(S.me.shares * (f || 1)));
+      }
+    }
+  };
+});
+
+$('submit').onclick = async () => {
+  const price = Number($('f-price').value);
+  const qty = Number($('f-qty').value);
+  const msg = $('msg');
+  const r = await fetch('/api/order', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ side, price, qty }),
+  }).then((r) => r.json());
+  if (r.error) { msg.textContent = r.error; msg.className = 'err'; }
+  else {
+    msg.textContent = r.fills > 0 ? `체결 완료 (${r.fills}건)` : '주문 접수 (호가 대기)';
+    msg.className = 'ok';
+  }
+  setTimeout(() => (msg.textContent = ''), 2500);
+};
+
+async function cancelOrder(id) {
+  await fetch(`/api/orders/${id}/cancel`, { method: 'POST' });
+}
+
+async function sendPost() {
+  const inp = $('f-post');
+  const text = inp.value.trim();
+  if (!text) return;
+  await fetch('/api/post', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  inp.value = '';
+}
+$('f-post').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendPost(); });
+</script>
+</body>
+</html>
