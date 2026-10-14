@@ -39,6 +39,34 @@ for (let i = 0; i < 4000; i++) {
 }
 
 assert.ok(w.trades.length >= 100, `체결이 충분해야 함 (현재 ${w.trades.length})`);
+
+// ── 3) 캔들 무결성 ──
+{
+  let totalQty = 0;
+  const orig = w.applyFill.bind(w);
+  // 이미 실행된 4000틱의 거래량은 candles 합계에서 역산
+  const candles = w.candles.all();
+  const volSum = candles.reduce((s, c) => s + c.v, 0);
+
+  assert.ok(candles.length >= 100 && candles.length <= 140,
+    `30틱 봉 개수는 ~133이어야 함 (현재 ${candles.length})`);
+  for (const c of candles) {
+    assert.ok(c.h >= Math.max(c.o, c.c) && c.l <= Math.min(c.o, c.c),
+      `OHLC 위반: ${JSON.stringify(c)}`);
+    assert.ok(c.h >= c.l && c.v >= 0, `H/L 또는 거래량 위반: ${JSON.stringify(c)}`);
+  }
+  for (let i = 1; i < candles.length; i++) {
+    assert.strictEqual(candles[i].t, candles[i - 1].t + 1, '봉 시계열 연속성 위반');
+  }
+  // 새 체결 → 캔들 거래량 정확히 반영되는지 500틱 추가 검증
+  w.applyFill = (f) => { totalQty += f.qty; orig(f); };
+  for (let i = 0; i < 500; i++) w.tick();
+  w.applyFill = orig;
+  const volSum2 = w.candles.all().reduce((s, c) => s + c.v, 0) - volSum;
+  assert.strictEqual(volSum2, totalQty,
+    `캔들 거래량 합(${volSum2})이 실제 체결량(${totalQty})과 일치해야 함`);
+  console.log(`✔ 캔들 무결성 통과 (${w.candles.all().length}봉, 추가 검증 거래량 ${totalQty}주)`);
+}
 assert.ok(quoted / sampled > 0.95, `MM 양방향 호가 유지율 ${quoted}/${sampled}`);
 assert.ok(w.feed.posts.length >= 20, `커뮤니티 글 부족 (${w.feed.posts.length})`);
 assert.ok(w.feed.posts.filter((p) => p.replyTo).length >= 1, '댓글 최소 1개');

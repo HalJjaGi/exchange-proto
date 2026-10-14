@@ -79,7 +79,7 @@
 
 <main>
   <div class="panel">
-    <h3>시세 (최근 240틱)</h3>
+    <h3>시세 (30초 봉 · MA5/MA20)</h3>
     <canvas id="chart"></canvas>
     <h3 style="margin-top:12px">체결</h3>
     <ul id="trades"></ul>
@@ -165,7 +165,7 @@ function render(s) {
   c.textContent = `${up ? '+' : ''}${s.changePct.toFixed(2)}% (시가 대비)`;
   c.className = 'chg ' + (up ? 'up' : 'down');
 
-  drawChart(s.chart);
+  drawChart2(s);
   renderTrades(s.trades);
   renderBook(s.book, s.price);
   renderMe(s.me);
@@ -208,6 +208,96 @@ function drawChart(data) {
 
   // 마지막 가격 점선
   const last = data[data.length - 1];
+  ctx.strokeStyle = '#f0b24b'; ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.lineWidth = dpr;
+  ctx.beginPath(); ctx.moveTo(padL, y(last)); ctx.lineTo(W - padR, y(last)); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// 캔들 차트 (30초봉) — candles 데이터 없으면 기존 라인으로 폴백
+function drawChart2(s) {
+  if (s.candles && s.candles.length > 1) drawCandles(s.candles);
+  else drawChart(s.chart);
+}
+
+function drawCandles(candles) {
+  const cv = $('chart');
+  const dpr = 2;
+  const W = cv.offsetWidth * dpr, H = (cv.offsetHeight || 420) * dpr;
+  if (cv.width !== W) { cv.width = W; cv.height = H; }
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const data = candles.slice(-120);
+  if (data.length < 2) return;
+
+  const UP = '#f0544f', DOWN = '#4b8ef0';
+  const padL = 10 * dpr, padR = 64 * dpr, padT = 10 * dpr, padB = 6 * dpr;
+  const volH = (H - padT - padB) * 0.26;
+  const priceT = padT, priceB = H - padB - volH - 8 * dpr;
+
+  let lo = Infinity, hi = -Infinity, vmax = 0;
+  for (const c of data) {
+    if (c.l < lo) lo = c.l;
+    if (c.h > hi) hi = c.h;
+    if (c.v > vmax) vmax = c.v;
+  }
+  const pad = (hi - lo) * 0.06 || 10;
+  lo -= pad; hi += pad;
+
+  const n = data.length;
+  const cw = (W - padL - padR) / n;
+  const x = (i) => padL + (i + 0.5) * cw;
+  const y = (v) => priceT + (1 - (v - lo) / (hi - lo)) * (priceB - priceT);
+  const yv = (v) => H - padB - (vmax ? (v / vmax) * (volH - 4 * dpr) : 0);
+
+  // 그리드 + 가격 라벨
+  ctx.strokeStyle = '#1c2433'; ctx.fillStyle = '#5b6577';
+  ctx.font = `${10 * dpr}px sans-serif`; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + ((hi - lo) * i) / 4;
+    const yy = y(v);
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+    ctx.fillText(won(v), W - padR + 6 * dpr, yy + 3 * dpr);
+  }
+
+  // 캔들 + 거래량
+  const bodyW = Math.max(2 * dpr, Math.floor(cw * 0.6));
+  data.forEach((c, i) => {
+    const col = c.c >= c.o ? UP : DOWN;
+    const cx = x(i);
+    ctx.strokeStyle = col; ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(cx, y(c.h)); ctx.lineTo(cx, y(c.l)); ctx.stroke();
+    const top = y(Math.max(c.o, c.c)), bot = y(Math.min(c.o, c.c));
+    ctx.fillStyle = col;
+    ctx.fillRect(cx - bodyW / 2, top, bodyW, Math.max(1 * dpr, bot - top));
+    if (c.v > 0) {
+      ctx.globalAlpha = 0.45;
+      ctx.fillRect(cx - bodyW / 2, yv(c.v), bodyW, H - padB - yv(c.v));
+      ctx.globalAlpha = 1;
+    }
+  });
+
+  // MA5 / MA20 이동평균
+  const closes = data.map((c) => c.c);
+  const maLine = (period, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    let started = false;
+    for (let i = period - 1; i < n; i++) {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+      const yy = y(sum / period);
+      if (!started) { ctx.moveTo(x(i), yy); started = true; } else ctx.lineTo(x(i), yy);
+    }
+    ctx.stroke();
+  };
+  maLine(5, '#f0b24b');
+  maLine(20, '#b48ef0');
+
+  // 범례 + 마지막가 점선
+  ctx.fillStyle = '#f0b24b'; ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.fillText('MA5', padL + 4 * dpr, padT + 10 * dpr);
+  ctx.fillStyle = '#b48ef0'; ctx.fillText('MA20', padL + 34 * dpr, padT + 10 * dpr);
+  const last = data[data.length - 1].c;
   ctx.strokeStyle = '#f0b24b'; ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.lineWidth = dpr;
   ctx.beginPath(); ctx.moveTo(padL, y(last)); ctx.lineTo(W - padR, y(last)); ctx.stroke();
   ctx.setLineDash([]);

@@ -7,6 +7,9 @@ const { MarketSim } = require('./sim');
 const { MarketMaker } = require('./mm');
 const { Bot, PERSONAS } = require('./bots');
 const { Feed } = require('./feed');
+const { CandleAggregator } = require('./candles');
+
+const CANDLE_PERIOD_TICKS = 30; // 1틱=1초 → 30초봉
 
 class World {
   constructor() {
@@ -22,6 +25,7 @@ class World {
     this.mmBot = new MarketMaker();
     this.bots = PERSONAS.map((p) => new Bot(p, this));
     this.feed = new Feed();
+    this.candles = new CandleAggregator(CANDLE_PERIOD_TICKS);
     this.trades = [];
     this.lastPrice = null;
     this.tickCount = 0;
@@ -32,6 +36,8 @@ class World {
   tick() {
     this.tickCount++;
     this.sim.tick();
+    // 캔들 집계: 틱별 기준가 반영 (체결은 applyFill에서 onTrade로 반영)
+    this.candles.onTick(this.tickCount, this.lastPrice ?? this.sim.fair);
     this.mmBot.requote(this);
     for (const b of this.bots) {
       if (this.tickCount >= b.nextAct) {
@@ -78,6 +84,7 @@ class World {
 
   applyFill(f) {
     this.lastPrice = f.price;
+    this.candles.onTrade(f.price, f.qty);
     this.trades.push({ ...f });
     if (this.trades.length > 500) this.trades.shift();
 
@@ -150,6 +157,8 @@ class World {
       },
       feed: this.feed.posts.slice(-40),
       chart: this.sim.history.slice(-240),
+      candles: this.candles.all().slice(-120),
+      candlePeriod: CANDLE_PERIOD_TICKS,
       mmInventory: this.mmBot.inventory,
     };
   }
