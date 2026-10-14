@@ -36,9 +36,12 @@ class World {
   tick() {
     this.tickCount++;
     this.sim.tick();
-    // 캔들 집계: 틱별 기준가 반영 (체결은 applyFill에서 onTrade로 반영)
-    this.candles.onTick(this.tickCount, this.lastPrice ?? this.sim.fair);
     this.mmBot.requote(this);
+    // 캔들 집계: 매 틱 호가 중간가(mid)를 반영 → 봉이 틱마다 살아 움직임
+    // (체결은 applyFill에서 onTrade로 반영: 거래량 + 체결가 h/l/c)
+    const bb = this.book.bestBid(), ba = this.book.bestAsk();
+    const mid = bb && ba ? Math.round((bb.price + ba.price) / 2) : (this.lastPrice ?? this.sim.fair);
+    this.candles.onTick(this.tickCount, mid);
     for (const b of this.bots) {
       if (this.tickCount >= b.nextAct) {
         b.nextAct = this.tickCount + b.speed + Math.floor(Math.random() * b.speed);
